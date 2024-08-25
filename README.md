@@ -6,6 +6,10 @@ This repository demonstrates how to use Elliptic Curve Diffie-Hellman (ECDH) cry
 - **node-dapp.js**: A Node.js command-line client for key setup, message sending, and message retrieval.
 - **web-dapp.js**: A simple web client for interacting with the smart contract.
 
+Web app demo is available here: https://jamesbachini.github.io/Privacy.sol/
+
+Contract is deployed to Sepolia Ethereum Testnet: https://sepolia.etherscan.io/address/0xd854a0173f60799930e25039d18fda82c77bd278#code
+
 ## Background
 
 Public blockchains are transparent, meaning all data is visible to everyone. This transparency poses a challenge for private communication. This project demonstrates a method to create a shared secret without the ability to transfer keys privately. Using ECDH, the sender and recipient can generate a shared secret that is used to encrypt and decrypt messages, ensuring privacy on a public network.
