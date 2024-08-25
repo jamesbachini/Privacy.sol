@@ -12,7 +12,7 @@ const contractABI = [
 
 const contractAddress = "0xD854A0173f60799930E25039d18fda82C77bd278";
 const provider = new ethers.JsonRpcProvider('https://rpc2.sepolia.org');
-const privateKey = process.env.ALT_PRIVATE_KEY; // switch accounts with process.env.ALT_PRIVATE_KEY;
+const privateKey = process.env.PRIVATE_KEY; // switch accounts with process.env.ALT_PRIVATE_KEY;
 const wallet = new ethers.Wallet(privateKey, provider);
 const contract = new ethers.Contract(contractAddress, contractABI, wallet);
 
