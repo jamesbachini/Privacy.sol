@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/elliptic/6.5.7/elliptic.min.js"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&display=swap">
+  <style>
+    body {
+      font-family: 'Roboto Mono', Arial, sans-serif;
+      line-height: 1.6;
+      margin: 0;
+      padding: 20px;
+      background-color: #000;
+      color: #CCC;
+    }
+
+    #app {
+      max-width: 1000px;
+      margin: 0 auto;
+      background-color: #111;
+      padding: 20px;
+      border-radius: 5px;
+      text-align: center;
+    }
+
+    h1, h2 {
+      color: #2bc71f;
+    }
+
+    input[type="text"] {
+      width: 80%;
+      margin: 5px auto;
+      padding: 10px;
+      margin-bottom: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background: #333;
+      color: #EEE;
+      text-align: center;
+    }
+
+    button {
+      background-color: #000;
+      color: white;
+      padding: 10px 15px;
+      border: 3px solid #2bc71f;
+      border-radius: 50px;
+      cursor: pointer;
+    }
+
+    hr {
+      margin: 50px 100px;
+      border: 1px solid #333;
+    }
+
+    #message-list {
+      margin-top: 20px;
+    }
+
+    .message {
+      background-color: #333;
+      border: 1px solid #555;
+      padding: 10px;
+      margin: 10px;
+      border-radius: 4px;
+    }
+
+    .green {
+      color: #2bc71f;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <h1>Privacy dApp</h1>
+    <div id="connection-status">Not connected</div>
+    <div id="account-info">
+      <p>Address: <span id="account-address"></span></p>
+      <p>Balance: <span id="account-balance"></span> ETH</p>
+    </div>
+    <div id="key-registration">
+      <p>Generate Keys & Register your ECDH public key before sending or receiving messages</p>
+      <div>
+        <button id="connect-wallet">Connect Wallet</button>
+        <button id="generate-keys">Generate Keys</button>
+        <button id="register-key">Register Public Key</button>
+      </div>
+    </div>
+    <hr />
+    <div id="messaging">
+      <h2>Send Message</h2>
+      <input type="text" id="recipient-address" placeholder="Recipient Address">
+      <input type="text" id="message-input" placeholder="Enter your message">
+      <div>
+        <button id="send-message">Send Message</button>
+      </div>
+    </div>
+    <hr />
+    <div id="messages">
+      <h2>Messages</h2>
+      <button id="check-messages">Check Messages</button>
+      <div id="message-list"></div>
+    </div>
+  </div>
+  <script>
+    const contractABI = [
+      "function registerPublicKey(bytes calldata _publicKey) external",
+      "function sendMessage(address _to, bytes calldata _encryptedMessage) external",
+      "function getMessages(address _user) external view returns (tuple(address sender, bytes encryptedMessage, uint256 timestamp)[])",
+      "function getPublicKey(address _user) external view returns (bytes memory)"
+    ];
+    const contractAddress = "0xD854A0173f60799930E25039d18fda82C77bd278";
+    let provider, signer, contract, accountAddress;
+
+    async function connectWallet() {
+      if (typeof window.ethereum !== 'undefined') {
+        await window.ethereum.request({ method: 'eth_requestAccounts' });
+        provider = new ethers.BrowserProvider(window.ethereum);
+        signer = await provider.getSigner();
+        contract = new ethers.Contract(contractAddress, contractABI, signer);
+        accountAddress = await signer.getAddress();
+        document.getElementById('connection-status').textContent = 'Connected';
+        document.getElementById('account-address').textContent = accountAddress;
+        const balance = await provider.getBalance(accountAddress);
+        document.getElementById('account-balance').textContent = ethers.formatEther(balance);
+      } else {
+        alert('Please install MetaMask!');
+      }
+    }
+
+    function deriveECDHKeysFromPrivateKey(privateKey) {
+      const ecdh = new elliptic.ec('secp256k1');
+      const privateKeyBytes = new Uint8Array(privateKey.slice(2).match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+      const keys = ecdh.keyFromPrivate(privateKeyBytes);
+      const fullPublicKey = keys.getPublic();
+      const publicKey = fullPublicKey.encode('hex').slice(2);
+      return { privateKey: privateKey.slice(2), publicKey };
+    }
+
+    async function generateKeys() {
+      const privateKey = prompt('Enter private key for wallet:');
+      const keysECDH = deriveECDHKeysFromPrivateKey(privateKey);
+      localStorage.setItem(accountAddress, JSON.stringify(keysECDH));
+    }
+
+    async function registerPublicKey() {
+      const keysECDH = JSON.parse(localStorage.getItem(accountAddress));
+      const tx = await contract.registerPublicKey('0x' + keysECDH.publicKey);
+      await tx.wait();
+      console.log('Public key registered successfully');
+    }
+
+    function formatPublicKey(toPublicKey) {
+      let cleanPublicKey = toPublicKey.startsWith('0x') ? toPublicKey.slice(2) : toPublicKey;
+      if (cleanPublicKey.length !== 128) throw new Error('Invalid public key length');
+      const publicKeyBytes = new Uint8Array(cleanPublicKey.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+      const prefix = new Uint8Array([0x04]);
+      const formattedPublicKey = new Uint8Array(prefix.length + publicKeyBytes.length);
+      formattedPublicKey.set(prefix);
+      formattedPublicKey.set(publicKeyBytes, prefix.length);
+      return formattedPublicKey;
+    }
+
+
+    async function sendMessage() {
+      const recipientAddress = document.getElementById('recipient-address').value;
+      const message = document.getElementById('message-input').value;
+      const toPublicKey = await contract.getPublicKey(recipientAddress);
+      if (toPublicKey === '0x') {
+          alert('Recipient has not registered their public key');
+          return;
+      }
+      const keysECDH = JSON.parse(localStorage.getItem(accountAddress));
+      const ecdh = new elliptic.ec('secp256k1');
+      const privateKeyBytes = new Uint8Array(keysECDH.privateKey.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+      const keys = ecdh.keyFromPrivate(privateKeyBytes);
+      const formattedPublicKey = formatPublicKey(toPublicKey);
+      const recipientKey = ecdh.keyFromPublic(formattedPublicKey);
+      if (!ecdh.curve.validate(recipientKey.getPublic())) {
+          throw new Error('Invalid recipient public key');
+      }
+      const sharedSecret = keys.derive(recipientKey.getPublic());
+      const sharedSecretHex = sharedSecret.toString(16).padStart(64, '0');
+      const key = CryptoJS.enc.Hex.parse(sharedSecretHex.slice(0, 64));
+      const iv = CryptoJS.enc.Hex.parse('00000000000000000000000000000000'); // 16 bytes of zero IV
+      const encryptedMessage = CryptoJS.AES.encrypt(message, key, { iv: iv, mode: CryptoJS.mode.CBC, padding: CryptoJS.pad.Pkcs7 }).ciphertext.toString(CryptoJS.enc.Hex);
+      const tx = await contract.sendMessage(recipientAddress, '0x' + encryptedMessage);
+      await tx.wait();
+      console.log('Message sent successfully');
+    }
+
+    async function checkMessages() {
+      const messages = await contract.getMessages(accountAddress);    
+      const messageList = document.getElementById('message-list');
+      messageList.innerHTML = '';
+      if (messages.length === 0) {
+          messageList.innerHTML = 'No messages found';
+          return;
+      }
+      
+      for (const message of messages) {
+          console.log(message);
+          const sender = message.sender;
+          const encryptedMessage = message.encryptedMessage;
+          const timestamp = new Date(Number(message.timestamp) * 1000).toLocaleString();
+
+          // Fetch the sender's public key from the contract
+          const senderPublicKey = await contract.getPublicKey(sender);
+          if (senderPublicKey === '0x') {
+              console.log(`No public key found for sender: ${sender}`);
+              continue;
+          }
+
+          // Derive shared secret using ECDH
+          const keysECDH = JSON.parse(localStorage.getItem(accountAddress));
+          const ecdh = new elliptic.ec('secp256k1');
+          const privateKeyBytes = new Uint8Array(keysECDH.privateKey.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+          const keys = ecdh.keyFromPrivate(privateKeyBytes);
+          const formattedPublicKey = formatPublicKey(senderPublicKey);
+          const recipientKey = ecdh.keyFromPublic(formattedPublicKey);
+
+          if (!ecdh.curve.validate(recipientKey.getPublic())) {
+              throw new Error('Invalid recipient public key');
+          }
+
+          const sharedSecret = keys.derive(recipientKey.getPublic());
+          const sharedSecretHex = sharedSecret.toString(16).padStart(64, '0');
+          const key = CryptoJS.enc.Hex.parse(sharedSecretHex.slice(0, 64));
+
+          // Decrypt the message using AES-256-CBC
+          const encryptedHexStr = CryptoJS.enc.Hex.parse(encryptedMessage.slice(2)); // Convert the encrypted message from hex string to CryptoJS format
+          const encryptedBase64Str = CryptoJS.enc.Base64.stringify(encryptedHexStr); // Convert to Base64 string for decryption
+          const iv = CryptoJS.enc.Hex.parse('00000000000000000000000000000000'); // Same IV used for encryption
+          const decryptedBytes = CryptoJS.AES.decrypt(encryptedBase64Str, key, { iv: iv, mode: CryptoJS.mode.CBC, padding: CryptoJS.pad.Pkcs7 });
+          const decryptedMessage = decryptedBytes.toString(CryptoJS.enc.Utf8);
+
+          const messageElement = document.createElement('div');
+          messageElement.className = 'message';
+          messageElement.innerHTML = `
+              <p><span class="green">From:</span> ${sender}</p>
+              <p><span class="green">Timestamp:</span> ${timestamp}</p>
+              <p><span class="green">Message:</span> ${decryptedMessage}</p>
+          `;
+          messageList.appendChild(messageElement);
+      }
+    }
+
+
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('connect-wallet').addEventListener('click', connectWallet);
+      document.getElementById('generate-keys').addEventListener('click', generateKeys);
+      document.getElementById('register-key').addEventListener('click', registerPublicKey);
+      document.getElementById('send-message').addEventListener('click', sendMessage);
+      document.getElementById('check-messages').addEventListener('click', checkMessages);
+    });
+  </script>
+</body>
+</html>
